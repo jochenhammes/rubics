@@ -1,0 +1,163 @@
+:root {
+  --bg: #12151c;
+  --panel: #1c212c;
+  --line: #2c3342;
+  --text: #e8ebf2;
+  --muted: #98a1b3;
+  --accent: #4cc9f0;
+  --danger: #ef5d5d;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: radial-gradient(120% 90% at 50% 35%, #232a3a 0%, var(--bg) 70%);
+  color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 6px;
+}
+
+h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: .02em; }
+
+.stat { color: var(--muted); font-size: 13px; }
+.stat b { color: var(--text); font-size: 16px; margin-left: 6px; font-variant-numeric: tabular-nums; }
+
+main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+#stage { position: relative; flex: 1; min-height: 0; min-width: 0; }
+
+#canvas {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: grab;
+}
+#canvas.grabbing { cursor: grabbing; }
+
+#tip {
+  position: absolute; left: 0; right: 0; bottom: 4px;
+  margin: 0; padding: 0 12px;
+  text-align: center; color: var(--muted); font-size: 12px;
+  pointer-events: none;
+  transition: opacity .6s;
+}
+#tip.hide { opacity: 0; }
+
+#toast {
+  position: absolute; top: 12px; left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: #1f8f5f; color: #fff; font-weight: 600;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .4);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Helfer */
+#helper {
+  margin: 0 10px 8px;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+#helper[hidden] { display: none; }
+
+.h-head { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12px; }
+#hStep { white-space: nowrap; }
+#hDots { display: flex; gap: 5px; flex-shrink: 0; }
+#hDots i { width: 14px; height: 4px; border-radius: 2px; background: var(--line); }
+#hDots i.done { background: #3aa675; }
+#hDots i.now { background: var(--accent); }
+
+#helper h2 { margin: 4px 0 2px; font-size: 16px; }
+#hText { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+
+#hMoves { display: flex; flex-wrap: wrap; gap: 5px; min-height: 28px; margin-bottom: 10px; }
+#hMoves span {
+  min-width: 30px; padding: 3px 6px;
+  text-align: center;
+  border: 1px solid var(--line); border-radius: 7px;
+  font: 600 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--muted);
+}
+#hMoves span.next { color: #06222c; background: var(--accent); border-color: var(--accent); }
+#hMoves span.more { border: 0; min-width: 0; }
+
+.h-actions { display: flex; gap: 8px; }
+.h-actions button { flex: 1; }
+
+/* Buttons */
+button {
+  appearance: none;
+  padding: 11px 10px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit; font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+button:hover { border-color: #46506a; }
+button:active { transform: translateY(1px); }
+button:disabled { opacity: .45; cursor: default; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary, button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #06222c; }
+button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+nav {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding: 4px 10px calc(10px + env(safe-area-inset-bottom));
+}
+
+dialog {
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 18px;
+  border: 1px solid var(--line); border-radius: 14px;
+  background: var(--panel); color: var(--text);
+}
+dialog::backdrop { background: rgba(0, 0, 0, .55); }
+dialog p { margin: 0 0 16px; }
+dialog form { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* Breite Bildschirme: Helfer als Seitenleiste */
+@media (min-width: 900px) and (min-height: 520px) {
+  main { flex-direction: row; }
+  #helper { width: 320px; margin: 12px 16px 12px 0; align-self: center; padding: 16px; }
+  nav { width: min(560px, 100%); margin: 0 auto; }
+  h1 { font-size: 19px; }
+}
+
+/* Niedrige Bildschirme (Phone quer): Helfer neben dem Würfel */
+@media (max-height: 519px) {
+  main { flex-direction: row; }
+  #helper { width: 280px; margin: 0 10px 6px 0; align-self: center; padding: 10px 12px; }
+  #hText { display: none; }
+  header { padding-top: 6px; padding-bottom: 2px; }
+  button { padding: 7px 10px; }
+  #tip { display: none; }
+}

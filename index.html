@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#12151c">
+  <title>Zauberwürfel</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <h1>Zauberwürfel</h1>
+    <div class="stat">Züge <b id="moveCount">0</b></div>
+  </header>
+
+  <main>
+    <div id="stage">
+      <canvas id="canvas" aria-label="3D-Zauberwürfel"></canvas>
+      <div id="toast" role="status" hidden></div>
+      <p id="tip">Fläche ziehen: Ebene drehen · daneben ziehen: Würfel drehen</p>
+    </div>
+
+    <aside id="helper" hidden aria-live="polite">
+      <div class="h-head">
+        <span id="hStep"></span>
+        <div id="hDots" aria-hidden="true"></div>
+      </div>
+      <h2 id="hTitle"></h2>
+      <p id="hText"></p>
+      <div id="hMoves"></div>
+      <div class="h-actions">
+        <button id="btnStep" class="primary">Zug ausführen</button>
+        <button id="btnAuto">Automatisch lösen</button>
+      </div>
+    </aside>
+  </main>
+
+  <nav>
+    <button id="btnScramble">Mischen</button>
+    <button id="btnUndo">Zurück</button>
+    <button id="btnHelp" aria-pressed="false">Hilfe</button>
+    <button id="btnReset">Reset</button>
+  </nav>
+
+  <dialog id="resetDialog">
+    <p>Würfel wirklich zurücksetzen? Der aktuelle Stand geht verloren.</p>
+    <form method="dialog">
+      <button value="cancel">Abbrechen</button>
+      <button value="ok" class="danger">Zurücksetzen</button>
+    </form>
+  </dialog>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
