@@ -162,3 +162,10 @@ dialog form { display: flex; gap: 8px; justify-content: flex-end; }
   button { padding: 7px 10px; }
   #tip { display: none; }
 }
+
+/* Poker-Variante: kein Würfel, also nur der Knopf "Geben" */
+nav button[hidden] { display: none; }
+body.poker .stat,
+body.poker nav button:not(#btnDeal) { display: none; }
+body.poker nav { grid-template-columns: minmax(0, 260px); justify-content: center; }
+body.poker #btnDeal { background: var(--accent); border-color: var(--accent); color: #06222c; }

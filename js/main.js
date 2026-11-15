@@ -5,6 +5,7 @@ import {
   inverseMove, moveName, parseMove, randomScramble,
 } from './cube.js';
 import { solve, STAGE_COUNT } from './solver.js';
+import { createPoker } from './poker.js';
 
 const $ = (id) => document.getElementById(id);
 const HALF_PI = Math.PI / 2;
@@ -31,6 +32,7 @@ let autoplay = false;
 const COOKIE = 'rubik';
 
 function save() {
+  if (POKER) return; // der Pokertisch hat keinen Spielstand
   const data = [
     state.colors.join(''),
     state.moves,
@@ -80,6 +82,10 @@ const stage = $('stage');
 const query = new URLSearchParams(location.search);
 const wantsLite = query.has('lite') ||
   ['einfach', 'lite', 'low', 'niedrig'].includes((query.get('grafik') ?? query.get('quality') ?? '').toLowerCase());
+// Poker-Variante (?variante=poker): Pokertisch mit Karten, Chips und Kartengeben statt des Würfels
+const POKER = query.has('poker') ||
+  (query.get('variante') ?? query.get('variant') ?? '').toLowerCase() === 'poker';
+const TABLE_CENTER = new THREE.Vector3(0, 0, -4); // Mitte des Pokertischs
 const renderer = new THREE.WebGLRenderer({
   canvas,
   antialias: wantsLite,
@@ -94,7 +100,7 @@ const material = (base, extras) => (LITE
   : new THREE.MeshPhysicalMaterial({ ...base, ...extras }));
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(30, 1, 1, 90);
+const camera = new THREE.PerspectiveCamera(30, 1, 1, 220);
 
 // --- Spieltisch-Szene: Filz, Holzrand, Lampe -------------------------------
 
@@ -102,7 +108,7 @@ renderer.shadowMap.enabled = !LITE;
 renderer.shadowMap.type = THREE.VSMShadowMap;
 scene.background = new THREE.Color(0x050403);
 
-const LAMP_POS = new THREE.Vector3(4.5, 13, 6.5);
+const LAMP_POS = POKER ? new THREE.Vector3(5.5, 16, 3) : new THREE.Vector3(4.5, 13, 6.5);
 
 // Umgebung für Spiegelungen: dunkler Raum, grüner Filz unten, die Lampe als
 // helle Scheibe und ein schwaches Fenster hinter der Kamera.
@@ -130,12 +136,13 @@ const LAMP_POS = new THREE.Vector3(4.5, 13, 6.5);
 }
 
 // Hängelampe über dem Tisch: warmer Lichtkegel, der zum Rand hin abfällt
-const lamp = new THREE.SpotLight(0xfff0d8, LITE ? 430 : 620, 0, 0.62, 0.85, 2);
+const lamp = new THREE.SpotLight(0xfff0d8, (LITE ? 430 : 620) * (POKER ? 1.6 : 1), 0, POKER ? 0.8 : 0.62, 0.85, 2);
 lamp.position.copy(LAMP_POS);
-lamp.target.position.set(0, 0, -1);
+lamp.target.position.set(0, 0, POKER ? TABLE_CENTER.z : -1);
 lamp.castShadow = !LITE;
-lamp.shadow.mapSize.set(1024, 1024);
-lamp.shadow.radius = 4;
+// Pokertisch: viele kleine Schattenwerfer, daher feiner aufgelöst und schärfer
+lamp.shadow.mapSize.set(POKER ? 2048 : 1024, POKER ? 2048 : 1024);
+lamp.shadow.radius = POKER ? 2.5 : 4;
 lamp.shadow.blurSamples = 8;
 lamp.shadow.bias = -0.0006;
 lamp.shadow.camera.near = 4;
@@ -216,6 +223,71 @@ const TABLE = { x: 17, zBack: -14, zFront: 22, rim: 1.7, rimH: 0.55 };
   felt.receiveShadow = true;
   scene.add(felt);
 
+  // Gebrauchsspuren im Filz: abgewetzte helle Zonen, Flecken, ein Glasrand,
+  // Schleifspuren und Fusseln – als großflächige, nicht gekachelte Auflage.
+  if (!LITE) {
+    const wear = new THREE.Mesh(
+      new THREE.PlaneGeometry(feltW, feltD),
+      new THREE.MeshStandardMaterial({
+        map: canvasTexture(1024, 1024, (g, w, h) => {
+          const u = w / feltW, v = h / feltD;           // Pixel je Einheit
+          const cx = w / 2, cy = (TABLE_CENTER.z - TABLE.zBack) * v;
+          const blob = (x, y, r, color) => {
+            const grad = g.createRadialGradient(x, y, 0, x, y, r);
+            grad.addColorStop(0, color);
+            grad.addColorStop(1, color.replace(/[\d.]+\)$/, '0)'));
+            g.fillStyle = grad;
+            g.fillRect(x - r, y - r, r * 2, r * 2);
+          };
+          // abgewetzte Mitte, wo Karten und Chips geschoben werden
+          g.save();
+          g.translate(cx, cy);
+          g.scale(1.5, 1);
+          blob(0, 0, 9 * v, 'rgba(210,235,190,0.10)');
+          g.restore();
+          for (let i = 0; i < 16; i++) {
+            blob(cx + (Math.random() - 0.5) * 26 * u, cy + (Math.random() - 0.5) * 20 * v,
+              (0.6 + Math.random() * 2.2) * u, `rgba(0,10,0,${0.05 + Math.random() * 0.09})`);
+          }
+          for (let i = 0; i < 10; i++) {
+            blob(cx + (Math.random() - 0.5) * 26 * u, cy + (Math.random() - 0.5) * 20 * v,
+              (0.5 + Math.random() * 1.6) * u, `rgba(225,240,200,${0.03 + Math.random() * 0.06})`);
+          }
+          // Schleifspuren von der Mitte zu den Plätzen
+          g.lineCap = 'round';
+          for (let i = 0; i < 14; i++) {
+            const a = Math.random() * Math.PI * 2, r0 = 1 + Math.random() * 3, r1 = 4 + Math.random() * 6;
+            g.strokeStyle = `rgba(215,240,200,${0.005 + Math.random() * 0.012})`;
+            g.lineWidth = (0.5 + Math.random() * 0.9) * u;
+            g.beginPath();
+            g.moveTo(cx + Math.cos(a) * r0 * u, cy + Math.sin(a) * r0 * v);
+            g.lineTo(cx + Math.cos(a + 0.1) * r1 * 1.3 * u, cy + Math.sin(a + 0.1) * r1 * v);
+            g.stroke();
+          }
+          // Glasränder
+          for (const [dx, dz] of [[-10.5, 5.2], [11.8, -6.8]]) {
+            g.strokeStyle = 'rgba(0,12,0,0.13)';
+            g.lineWidth = 0.09 * u;
+            g.beginPath();
+            g.ellipse(cx + dx * u, cy + dz * v, 1.15 * u, 1.15 * v, 0, 0.3, Math.PI * 1.85);
+            g.stroke();
+          }
+          // Fusseln und Krümel
+          for (let i = 0; i < 900; i++) {
+            g.fillStyle = `rgba(235,240,225,${0.08 + Math.random() * 0.3})`;
+            g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 1.6, 1);
+          }
+        }, 1, 1),
+        transparent: true, depthWrite: false, roughness: 1,
+      }),
+    );
+    wear.rotation.x = -Math.PI / 2;
+    wear.position.set(0, 0.003, felt.position.z);
+    wear.receiveShadow = true;
+    wear.renderOrder = 0.5;
+    scene.add(wear);
+  }
+
   const woodMat = material(
     { map: canvasTexture(1024, 128, drawWood, 3, 1), roughness: 0.42 },
     { clearcoat: 0.7, clearcoatRoughness: 0.2 },
@@ -265,7 +337,7 @@ const post = LITE ? null : {
       texel: { value: new THREE.Vector2() },
       near: { value: 1 }, far: { value: 90 },
       focus: { value: 12 },      // Abstand der Schärfeebene (Würfelmitte)
-      range: { value: 3.2 },     // Bereich um die Schärfeebene, der scharf bleibt
+      range: { value: POKER ? 9 : 3.2 }, // Bereich um die Schärfeebene, der scharf bleibt
       strength: { value: 20 },   // Unschärfe in Pixeln
       maxBlur: { value: 12 },
       exposure: { value: 1.45 },
@@ -318,13 +390,16 @@ const post = LITE ? null : {
 // dem Filz ist. Weichgezeichnet ergibt das den dunklen Schatten an der
 // Auflagefläche, der den Würfel "erdet" – auch gekippt und beim Drehen.
 
-const CONTACT = { size: 6.6, height: 1.5, res: 256 };
+const CONTACT = POKER
+  ? { size: 30, height: 1.0, res: 1024, z: TABLE_CENTER.z, opacity: 0.8, spread: 1.1 }
+  : { size: 6.6, height: 1.5, res: 256, z: 0, opacity: 0.85, spread: 1.6 };
 const contact = LITE ? null : (() => {
   const rt = () => new THREE.WebGLRenderTarget(CONTACT.res, CONTACT.res);
   const cam = new THREE.OrthographicCamera(
     -CONTACT.size / 2, CONTACT.size / 2, CONTACT.size / 2, -CONTACT.size / 2, 0, CONTACT.height,
   );
   cam.rotation.x = Math.PI / 2;
+  cam.position.z = CONTACT.z;
   cam.layers.set(1);
   const depthMat = new THREE.MeshDepthMaterial();
   depthMat.onBeforeCompile = (shader) => {
@@ -353,11 +428,11 @@ const contact = LITE ? null : (() => {
   const plane = new THREE.Mesh(
     new THREE.PlaneGeometry(CONTACT.size, CONTACT.size),
     new THREE.MeshBasicMaterial({
-      map: a.texture, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide,
+      map: a.texture, transparent: true, opacity: CONTACT.opacity, depthWrite: false, side: THREE.DoubleSide,
     }),
   );
   plane.rotation.x = Math.PI / 2;
-  plane.position.y = 0.006;
+  plane.position.set(0, 0.006, CONTACT.z);
   plane.renderOrder = 1;
   scene.add(plane);
   return { cam, depthMat, a, b, blur };
@@ -373,7 +448,7 @@ function renderContact() {
   renderer.render(scene, contact.cam);
   scene.overrideMaterial = null;
   scene.background = background;
-  const step = 1.6 / CONTACT.res;
+  const step = CONTACT.spread / CONTACT.res;
   for (let pass = 0; pass < 2; pass++) {
     contact.blur.uniforms.tex.value = contact.a.texture;
     contact.blur.uniforms.dir.value.set(step, 0);
@@ -386,8 +461,8 @@ function renderContact() {
   renderer.shadowMap.autoUpdate = true;
 }
 
-// Einfache Darstellung: fester, weicher Schattenfleck statt berechneter Schatten
-if (LITE) {
+// Einfache Darstellung: fester, weicher Schattenfleck unter dem Würfel statt berechneter Schatten
+if (LITE && !POKER) {
   const blob = new THREE.Mesh(
     new THREE.PlaneGeometry(6.4, 6.4),
     new THREE.MeshBasicMaterial({
@@ -420,6 +495,7 @@ function render() {
 }
 
 const cubeGroup = new THREE.Group();
+cubeGroup.visible = !POKER;
 scene.add(cubeGroup);
 
 const COLORS = [0xf4f4f0, 0xffd000, 0xc4121c, 0xff5a00, 0x009b48, 0x0046c8]; // U D R L F B
@@ -609,13 +685,17 @@ function showArrow(move) {
 
 let dirty = true;
 
-const CAM_ELEV = 0.5;  // Blick von schräg oben auf den Tisch
-const LOOK_Y = 1.7;
+// Blick von schräg oben auf den Tisch. Am Pokertisch kreist die Kamera um die Tischmitte.
+const CAM_ELEV = 0.5;
+const LOOK = POKER ? TABLE_CENTER : new THREE.Vector3(0, 1.7, 0);
+const pokerView = { yaw: 0, pitch: 0.86 };
+const REST_PITCH = 0.5; // bei diesem Ansichtswinkel steht der Würfel flach auf dem Tisch
+const CUBE_CENTER = new THREE.Vector3(0, 1.5, 0);
 const HALF = 0.4875;   // halbe Kantenlänge eines Steins
 
 // Der Würfel wird in der Hand gedreht; Kamera, Tisch und Licht bleiben stehen.
 function applyView() {
-  cubeGroup.rotation.set(state.pitch - CAM_ELEV, state.yaw, 0, 'XYZ');
+  cubeGroup.rotation.set(state.pitch - REST_PITCH, state.yaw, 0, 'XYZ');
   dirty = true;
 }
 
@@ -642,15 +722,22 @@ function fitCamera() {
   camera.aspect = w / h;
   const halfV = THREE.MathUtils.degToRad(camera.fov / 2);
   const half = Math.min(halfV, Math.atan(Math.tan(halfV) * camera.aspect));
-  const dist = (3.0 / Math.sin(half)) * zoom;
-  camera.position.set(0, LOOK_Y + dist * Math.sin(CAM_ELEV), dist * Math.cos(CAM_ELEV));
-  camera.lookAt(0, LOOK_Y, 0);
+  // Bildausschnitt: der Würfel bzw. die Karten rund um die Tischmitte
+  const fit = !POKER ? 3.0 : camera.aspect < 1 ? 8.8 : 8.6;
+  const dist = (fit / Math.sin(half)) * zoom;
+  const yaw = POKER ? pokerView.yaw : 0, pitch = POKER ? pokerView.pitch : CAM_ELEV;
+  camera.position.set(
+    LOOK.x + dist * Math.sin(yaw) * Math.cos(pitch),
+    LOOK.y + dist * Math.sin(pitch),
+    LOOK.z + dist * Math.cos(yaw) * Math.cos(pitch),
+  );
+  camera.lookAt(LOOK);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
   if (post) {
     const u = post.material.uniforms;
     u.texel.value.set(1 / size.x, 1 / size.y);
-    u.focus.value = dist;
+    u.focus.value = camera.position.distanceTo(POKER ? LOOK : CUBE_CENTER);
     u.strength.value = size.y * 0.03;
     u.maxBlur.value = size.y * 0.013;
   }
@@ -736,6 +823,7 @@ function frame(now) {
       pump();
     }
   }
+  if (poker?.update(now)) dirty = true;
   if (arrow.visible) {
     arrowSpin.rotation.z = (now / 1000) * 1.3;
     dirty = true;
@@ -821,13 +909,19 @@ function endTurn(d, cancel = false) {
 }
 
 function orbit(dx, dy) {
+  if (POKER) {
+    pokerView.yaw = Math.max(-1.1, Math.min(1.1, pokerView.yaw - dx * 0.006));
+    pokerView.pitch = Math.max(0.28, Math.min(1.4, pokerView.pitch + dy * 0.006));
+    fitCamera();
+    return;
+  }
   state.yaw += dx * 0.008;
   state.pitch = clampPitch(state.pitch + dy * 0.008);
   applyView();
 }
 
 function setZoom(z) {
-  zoom = Math.max(0.7, Math.min(1.8, z));
+  zoom = Math.max(POKER ? 0.3 : 0.7, Math.min(POKER ? 2.2 : 1.8, z));
   fitCamera();
 }
 
@@ -845,7 +939,7 @@ canvas.addEventListener('pointerdown', (ev) => {
     if (drag?.mode === 'turn') endTurn(drag, true);
     drag = { mode: 'multi', ...twoFinger() };
   } else if (pointers.size === 1) {
-    const hit = !busy() && pick(p.x, p.y, p.w, p.h);
+    const hit = !POKER && !busy() && pick(p.x, p.y, p.w, p.h);
     drag = hit
       ? { mode: 'pending', id: ev.pointerId, x0: p.x, y0: p.y, ...hit }
       : { mode: 'orbit', id: ev.pointerId, x: p.x, y: p.y };
@@ -906,7 +1000,7 @@ canvas.addEventListener('wheel', (ev) => {
 }, { passive: false });
 
 window.addEventListener('keydown', (ev) => {
-  if (ev.ctrlKey || ev.metaKey || ev.altKey || $('resetDialog').open) return;
+  if (POKER || ev.ctrlKey || ev.metaKey || ev.altKey || $('resetDialog').open) return;
   const face = ev.key.toUpperCase();
   if (face.length !== 1 || !'UDLRFB'.includes(face) || busy()) return;
   autoplay = false;
@@ -1057,7 +1151,21 @@ $('resetDialog').addEventListener('close', () => {
 
 // --- Start --------------------------------------------------------------------
 
-load();
+const poker = POKER ? createPoker({ scene, material, canvasTexture, lite: LITE, center: TABLE_CENTER }) : null;
+if (poker) {
+  document.body.classList.add('poker');
+  document.title = 'Pokertisch';
+  document.querySelector('h1').textContent = "Texas Hold'em";
+  $('tip').textContent = 'Ziehen: Kamera schwenken · Zoomen: Mausrad oder zwei Finger';
+  $('btnDeal').hidden = false;
+  $('btnDeal').addEventListener('click', () => {
+    $('tip').classList.add('hide');
+    poker.deal(performance.now());
+  });
+  setTimeout(() => poker.deal(performance.now()), 700);
+} else {
+  load();
+}
 applyView();
 fitCamera();
 paint();

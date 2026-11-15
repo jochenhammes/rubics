@@ -8,6 +8,20 @@
 - **Speichern:** Stand, Zugzähler und Ansicht liegen in einem Cookie und sind beim nächsten Besuch wieder da.
 - **Mischen / Zurück / Reset** über die Leiste unten.
 
+## Poker-Variante
+
+Per URL-Parameter zeigt die App statt des Würfels einen Texas-Hold'em-Tisch:
+
+```
+https://jochenhammes.github.io/rubics/?variante=poker
+```
+
+- Sechs Spieler bekommen reihum je zwei Pocket Cards (die eigenen liegen offen), danach werden Flop, Turn und River in der Tischmitte aufgedeckt – jeweils animiert vom Kartenstapel aus. Dazu Dealer-Button, Pot und Chipstapel vor jedem Platz.
+- Der Knopf **Geben** sammelt die Karten ein und teilt neu aus; die Karten werden jedes Mal neu gemischt.
+- Ziehen schwenkt die Kamera um die Tischmitte, Mausrad bzw. zwei Finger zoomen – nah herangezoomt sieht man Leinenprägung, abgegriffene Kanten und die einzelnen Chips.
+- In dieser Variante gibt es keinen Würfel und keinen Spielstand; es ist eine reine Tischszene.
+- Gleichwertige Schreibweise: `?poker`. Kombinierbar mit der einfachen Darstellung: `?variante=poker&grafik=einfach`.
+
 ## Ressourcenschonende Darstellung
 
 Die Standardansicht nutzt aufwendige Grafik (Schatten, Tiefenunschärfe, Glanz- und Gebrauchsspuren). Auf älteren oder schwächeren Geräten lässt sich per URL-Parameter eine einfache Darstellung einschalten:
