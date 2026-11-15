@@ -10,17 +10,23 @@
 
 ## Poker-Variante
 
-Per URL-Parameter zeigt die App statt des Würfels einen Texas-Hold'em-Tisch:
+Per URL-Parameter wird aus der App ein Texas-Hold'em-Turnier am 3D-Tisch (ohne Würfel):
 
 ```
 https://jochenhammes.github.io/rubics/?variante=poker
 ```
 
-- Sechs Spieler bekommen reihum je zwei Pocket Cards (die eigenen liegen offen), danach werden Flop, Turn und River in der Tischmitte aufgedeckt – jeweils animiert vom Kartenstapel aus. Dazu Dealer-Button, Pot und Chipstapel vor jedem Platz.
-- Der Knopf **Geben** sammelt die Karten ein und teilt neu aus; die Karten werden jedes Mal neu gemischt.
-- Ziehen schwenkt die Kamera um die Tischmitte, Mausrad bzw. zwei Finger zoomen – nah herangezoomt sieht man Leinenprägung, abgegriffene Kanten und die einzelnen Chips.
-- In dieser Variante gibt es keinen Würfel und keinen Spielstand; es ist eine reine Tischszene.
+- **Sit & Go** gegen 1–7 Computergegner in drei Spielstärken, mit wählbarem Startstack und Blind-Tempo. Regeln, Blindstruktur und Gegner stammen aus der Poker-Engine des Repositories [jochenhammes/texasholdem](https://github.com/jochenhammes/texasholdem).
+- **Am Tisch:** Karten werden animiert gegeben, Flop, Turn und River aufgedeckt, gefoldete Hände eingezogen. Stacks, Einsätze und Pot liegen als Chips auf dem Filz, der Dealer-Button wandert mit. Namen, Chipstände und Aktionen stehen als Beschriftung an jedem Platz.
+- **Bedienung:** Fold, Check/Call und Bet/Raise unten; der Einsatz lässt sich per Schieberegler, Zahlenfeld oder Schnellwahl (Min, ½ Pot, Pot, All-in) einstellen. Ziehen schwenkt die Kamera, Mausrad bzw. zwei Finger zoomen.
+- **Spielstand:** Das laufende Turnier wird im Browser gespeichert und kann nach dem Neuladen fortgesetzt werden. „Neues Turnier“ oben rechts startet neu.
 - Gleichwertige Schreibweise: `?poker`. Kombinierbar mit der einfachen Darstellung: `?variante=poker&grafik=einfach`.
+
+Die Engine liegt fertig gebündelt in `vendor/texasholdem/` (Stand siehe `VERSION` dort). Aktualisieren:
+
+```bash
+scripts/build-holdem.sh ../texasholdem
+```
 
 ## Ressourcenschonende Darstellung
 

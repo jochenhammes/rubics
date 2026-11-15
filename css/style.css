@@ -163,9 +163,77 @@ dialog form { display: flex; gap: 8px; justify-content: flex-end; }
   #tip { display: none; }
 }
 
-/* Poker-Variante: kein Würfel, also nur der Knopf "Geben" */
-nav button[hidden] { display: none; }
+/* --- Poker-Variante: Texas-Hold'em-Turnier am 3D-Tisch --- */
+button[hidden] { display: none; }
 body.poker .stat,
-body.poker nav button:not(#btnDeal) { display: none; }
-body.poker nav { grid-template-columns: minmax(0, 260px); justify-content: center; }
-body.poker #btnDeal { background: var(--accent); border-color: var(--accent); color: #06222c; }
+body.poker nav > button { display: none; }
+body.poker nav { display: block; padding: 6px 10px calc(10px + env(safe-area-inset-bottom)); }
+#pkMenu { padding: 6px 10px; font-size: 12px; }
+
+#pkBar { max-width: 640px; margin: 0 auto; }
+#pkBar:not(.my-turn) > :not(#pkWait),
+#pkBar.my-turn > #pkWait { display: none; }
+#pkWait { min-height: 46px; padding: 12px 0; text-align: center; color: var(--muted); }
+.pk-actions { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; }
+#pkRaise { display: grid; grid-template-columns: auto 1fr 84px; gap: 8px; align-items: center; margin-bottom: 8px; }
+#pkRaise[hidden] { display: none; }
+.pk-presets { display: flex; gap: 4px; }
+.pk-presets button { padding: 6px 8px; font-size: 12px; }
+#pkSlider { width: 100%; accent-color: var(--accent); touch-action: pan-x; }
+#pkAmount {
+  width: 100%; padding: 8px;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: #0f1218; color: var(--text);
+  font: inherit; font-variant-numeric: tabular-nums;
+}
+}
+
+#pkHud { position: absolute; top: 8px; left: 10px; display: flex; gap: 6px; pointer-events: none; }
+#pkHud span { padding: 3px 9px; border-radius: 999px; background: rgba(8, 10, 14, .62); color: #fff; font-size: 12px; }
+#pkHud span:empty { display: none; }
+#pkMsg {
+  position: absolute; top: 8px; left: 50%;
+  transform: translateX(-50%);
+  max-width: 60%; padding: 5px 14px;
+  border-radius: 14px;
+  background: rgba(8, 10, 14, .8); color: #fff;
+  font-size: 13px; text-align: center;
+  opacity: 0; transition: opacity .3s;
+  pointer-events: none;
+}
+#pkMsg.show { opacity: 1; }
+
+#pkLabels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.pk-seat, .pk-bet, .pk-pot { position: absolute; left: 0; top: 0; white-space: nowrap; will-change: transform; }
+.pk-seat {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 3px 9px;
+  border: 1.5px solid rgba(255, 255, 255, .16); border-radius: 9px;
+  background: rgba(10, 12, 17, .82); color: #fff;
+  font-size: 12px; line-height: 1.25;
+}
+.pk-seat b i { margin-left: 5px; padding: 0 4px; border-radius: 4px; background: #f3f0e6; color: #111; font-size: 10px; font-style: normal; }
+.pk-seat span { color: #ffd76a; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pk-seat em { color: #9fe3ff; font-size: 11px; font-style: normal; }
+.pk-seat.to-act { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(76, 201, 240, .35); }
+.pk-seat.folded { opacity: .55; }
+.pk-seat.out { opacity: .35; }
+.pk-seat.winner { border-color: #ffd76a; box-shadow: 0 0 12px rgba(255, 215, 106, .6); }
+.pk-bet { padding: 1px 7px; border-radius: 999px; background: rgba(0, 0, 0, .62); color: #fff; font-size: 11px; font-weight: 600; }
+.pk-pot { padding: 3px 10px; border-radius: 999px; background: rgba(0, 0, 0, .68); color: #ffd76a; font-size: 13px; font-weight: 700; }
+
+dialog h2 { margin: 0 0 12px; font-size: 17px; }
+#pkSetup form { display: grid; gap: 10px; min-width: min(280px, 76vw); }
+#pkSetup label { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+#pkSetup select {
+  min-width: 120px; padding: 8px;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: #0f1218; color: var(--text); font: inherit;
+}
+.pk-dialog-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
+
+@media (max-width: 520px) {
+  #pkMsg { top: 36px; max-width: 92%; }
+  #pkRaise { grid-template-columns: 1fr 84px; }
+  .pk-presets { grid-column: 1 / -1; }
+  .pk-presets button { flex: 1; }

@@ -6,6 +6,7 @@ import {
 } from './cube.js';
 import { solve, STAGE_COUNT } from './solver.js';
 import { createPoker } from './poker.js';
+import { startPokerGame } from './pokerGame.js';
 
 const $ = (id) => document.getElementById(id);
 const HALF_PI = Math.PI / 2;
@@ -82,10 +83,12 @@ const stage = $('stage');
 const query = new URLSearchParams(location.search);
 const wantsLite = query.has('lite') ||
   ['einfach', 'lite', 'low', 'niedrig'].includes((query.get('grafik') ?? query.get('quality') ?? '').toLowerCase());
-// Poker-Variante (?variante=poker): Pokertisch mit Karten, Chips und Kartengeben statt des Würfels
+// Poker-Variante (?variante=poker): Texas-Hold'em-Turnier am 3D-Tisch statt des Würfels
 const POKER = query.has('poker') ||
   (query.get('variante') ?? query.get('variant') ?? '').toLowerCase() === 'poker';
-const TABLE_CENTER = new THREE.Vector3(0, 0, -4); // Mitte des Pokertischs
+const TABLE_CENTER = new THREE.Vector3(0, 0, -4.5); // Mitte des Pokertischs
+let pokerGame = null;
+let poker = null;       // der 3D-Tisch (poker.js)
 const renderer = new THREE.WebGLRenderer({
   canvas,
   antialias: wantsLite,
@@ -203,7 +206,7 @@ function drawWood(g, w, h) {
   }
 }
 
-const TABLE = { x: 17, zBack: -14, zFront: 22, rim: 1.7, rimH: 0.55 };
+const TABLE = { x: 17, zBack: POKER ? -20 : -14, zFront: 22, rim: 1.7, rimH: 0.55 };
 {
   const feltW = TABLE.x * 2, feltD = TABLE.zFront - TABLE.zBack;
   const felt = new THREE.Mesh(
@@ -337,7 +340,7 @@ const post = LITE ? null : {
       texel: { value: new THREE.Vector2() },
       near: { value: 1 }, far: { value: 90 },
       focus: { value: 12 },      // Abstand der Schärfeebene (Würfelmitte)
-      range: { value: POKER ? 9 : 3.2 }, // Bereich um die Schärfeebene, der scharf bleibt
+      range: { value: POKER ? 14 : 3.2 }, // Bereich um die Schärfeebene, der scharf bleibt
       strength: { value: 20 },   // Unschärfe in Pixeln
       maxBlur: { value: 12 },
       exposure: { value: 1.45 },
@@ -486,12 +489,13 @@ function render() {
   settle();
   if (LITE) {
     renderer.render(scene, camera);
-    return;
+  } else {
+    renderContact();
+    renderer.setRenderTarget(target);
+    renderer.render(scene, camera);
+    drawQuad(post.material, null);
   }
-  renderContact();
-  renderer.setRenderTarget(target);
-  renderer.render(scene, camera);
-  drawQuad(post.material, null);
+  poker?.layoutLabels(camera, stage.clientWidth, stage.clientHeight);
 }
 
 const cubeGroup = new THREE.Group();
@@ -722,9 +726,13 @@ function fitCamera() {
   camera.aspect = w / h;
   const halfV = THREE.MathUtils.degToRad(camera.fov / 2);
   const half = Math.min(halfV, Math.atan(Math.tan(halfV) * camera.aspect));
-  // Bildausschnitt: der Würfel bzw. die Karten rund um die Tischmitte
-  const fit = !POKER ? 3.0 : camera.aspect < 1 ? 8.8 : 8.6;
-  const dist = (fit / Math.sin(half)) * zoom;
+  // Bildausschnitt: der Würfel bzw. alle Plätze rund um die Tischmitte
+  let dist = (3.0 / Math.sin(half)) * zoom;
+  if (POKER) {
+    const portrait = camera.aspect < 0.9;
+    const halfH = Math.atan(Math.tan(halfV) * camera.aspect);
+    dist = Math.max((portrait ? 10.8 : 19) / Math.tan(halfH), (portrait ? 14.5 : 11) / Math.tan(halfV)) * zoom;
+  }
   const yaw = POKER ? pokerView.yaw : 0, pitch = POKER ? pokerView.pitch : CAM_ELEV;
   camera.position.set(
     LOOK.x + dist * Math.sin(yaw) * Math.cos(pitch),
@@ -742,6 +750,7 @@ function fitCamera() {
     u.maxBlur.value = size.y * 0.013;
   }
   dirty = true;
+  pokerGame?.relayout(); // Hoch-/Querformat kann sich geändert haben
 }
 new ResizeObserver(fitCamera).observe(stage);
 
@@ -1151,18 +1160,24 @@ $('resetDialog').addEventListener('close', () => {
 
 // --- Start --------------------------------------------------------------------
 
-const poker = POKER ? createPoker({ scene, material, canvasTexture, lite: LITE, center: TABLE_CENTER }) : null;
-if (poker) {
+if (POKER) {
+  const labels = document.createElement('div');
+  labels.id = 'pkLabels';
+  stage.appendChild(labels);
+  poker = createPoker({ scene, material, canvasTexture, lite: LITE, center: TABLE_CENTER, labels });
   document.body.classList.add('poker');
-  document.title = 'Pokertisch';
+  document.title = "Texas Hold'em";
   document.querySelector('h1').textContent = "Texas Hold'em";
   $('tip').textContent = 'Ziehen: Kamera schwenken · Zoomen: Mausrad oder zwei Finger';
-  $('btnDeal').hidden = false;
-  $('btnDeal').addEventListener('click', () => {
-    $('tip').classList.add('hide');
-    poker.deal(performance.now());
+  setTimeout(() => $('tip').classList.add('hide'), 8000);
+  pokerGame = startPokerGame({
+    table: poker,
+    stage,
+    nav: document.querySelector('nav'),
+    header: document.querySelector('header'),
+    aspect: () => camera.aspect,
+    requestRender: () => { dirty = true; },
   });
-  setTimeout(() => poker.deal(performance.now()), 700);
 } else {
   load();
 }
@@ -1175,3 +1190,4 @@ requestAnimationFrame(frame);
 
 // Für automatisierte Tests
 window.__cube = { state, busy, enqueue };
+window.__poker = pokerGame;
