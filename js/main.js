@@ -74,15 +74,31 @@ function clampPitch(p) {
 
 const canvas = $('canvas');
 const stage = $('stage');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+// Ressourcenschonende Darstellung per URL-Parameter (?grafik=einfach) oder
+// automatisch, wenn der Browser kein WebGL 2 kann.
+const query = new URLSearchParams(location.search);
+const wantsLite = query.has('lite') ||
+  ['einfach', 'lite', 'low', 'niedrig'].includes((query.get('grafik') ?? query.get('quality') ?? '').toLowerCase());
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: wantsLite,
+  powerPreference: wantsLite ? 'low-power' : 'high-performance',
+});
+const LITE = wantsLite || !renderer.capabilities.isWebGL2;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, LITE ? 1.5 : 2));
+
+// Material mit Lack-/Samteffekten; in der einfachen Darstellung ohne diese Extras
+const material = (base, extras) => (LITE
+  ? new THREE.MeshStandardMaterial(base)
+  : new THREE.MeshPhysicalMaterial({ ...base, ...extras }));
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(30, 1, 1, 90);
 
 // --- Spieltisch-Szene: Filz, Holzrand, Lampe -------------------------------
 
-renderer.shadowMap.enabled = true;
+renderer.shadowMap.enabled = !LITE;
 renderer.shadowMap.type = THREE.VSMShadowMap;
 scene.background = new THREE.Color(0x050403);
 
@@ -114,14 +130,14 @@ const LAMP_POS = new THREE.Vector3(4.5, 13, 6.5);
 }
 
 // Hängelampe über dem Tisch: warmer Lichtkegel, der zum Rand hin abfällt
-const lamp = new THREE.SpotLight(0xfff0d8, 620, 0, 0.62, 0.85, 2);
+const lamp = new THREE.SpotLight(0xfff0d8, LITE ? 430 : 620, 0, 0.62, 0.85, 2);
 lamp.position.copy(LAMP_POS);
 lamp.target.position.set(0, 0, -1);
-lamp.castShadow = true;
+lamp.castShadow = !LITE;
 lamp.shadow.mapSize.set(1024, 1024);
 lamp.shadow.radius = 4;
 lamp.shadow.blurSamples = 8;
-lamp.shadow.bias = -0.0004;
+lamp.shadow.bias = -0.0006;
 lamp.shadow.camera.near = 4;
 lamp.shadow.camera.far = 40;
 scene.add(lamp, lamp.target);
@@ -185,12 +201,12 @@ const TABLE = { x: 17, zBack: -14, zFront: 22, rim: 1.7, rimH: 0.55 };
   const feltW = TABLE.x * 2, feltD = TABLE.zFront - TABLE.zBack;
   const felt = new THREE.Mesh(
     new THREE.PlaneGeometry(feltW, feltD),
-    new THREE.MeshPhysicalMaterial({
-      color: 0xffffff,
+    material({
       map: canvasTexture(512, 512, drawFelt([17, 92, 52]), feltW / 5, feltD / 5),
+      roughness: 1,
+    }, {
       bumpMap: canvasTexture(512, 512, drawFelt([128, 128, 128]), feltW / 5, feltD / 5, false),
       bumpScale: 0.6,
-      roughness: 1,
       sheen: 1, sheenRoughness: 0.7, sheenColor: new THREE.Color(0x3f9a63),
       envMapIntensity: 0.3,
     }),
@@ -200,10 +216,10 @@ const TABLE = { x: 17, zBack: -14, zFront: 22, rim: 1.7, rimH: 0.55 };
   felt.receiveShadow = true;
   scene.add(felt);
 
-  const woodMat = new THREE.MeshPhysicalMaterial({
-    map: canvasTexture(1024, 128, drawWood, 3, 1),
-    roughness: 0.42, clearcoat: 0.7, clearcoatRoughness: 0.2, envMapIntensity: 1,
-  });
+  const woodMat = material(
+    { map: canvasTexture(1024, 128, drawWood, 3, 1), roughness: 0.42 },
+    { clearcoat: 0.7, clearcoatRoughness: 0.2 },
+  );
   const rim = (w, d, x, z) => {
     const m = new THREE.Mesh(new RoundedBoxGeometry(w, TABLE.rimH * 2, d, 4, 0.22), woodMat);
     m.position.set(x, 0, z);
@@ -225,14 +241,23 @@ const TABLE = { x: 17, zBack: -14, zFront: 22, rim: 1.7, rimH: 0.55 };
 
 // --- Nachbearbeitung: Tiefenunschärfe, Vignette, Tonemapping -----------------
 
-const target = new THREE.WebGLRenderTarget(4, 4, {
+const target = LITE ? null : new THREE.WebGLRenderTarget(4, 4, {
   type: THREE.HalfFloatType,
   samples: 4,
   depthTexture: new THREE.DepthTexture(4, 4),
 });
-const post = {
-  scene: new THREE.Scene(),
-  camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1),
+const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
+const quadScene = new THREE.Scene().add(quad);
+const quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const QUAD_VERTEX = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
+function drawQuad(mat, to) {
+  quad.material = mat;
+  renderer.setRenderTarget(to);
+  renderer.render(quadScene, quadCamera);
+}
+
+const post = LITE ? null : {
+
   material: new THREE.ShaderMaterial({
     uniforms: {
       tColor: { value: target.texture },
@@ -245,7 +270,7 @@ const post = {
       maxBlur: { value: 12 },
       exposure: { value: 1.45 },
     },
-    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    vertexShader: QUAD_VERTEX,
     fragmentShader: `
       #include <packing>
       uniform sampler2D tColor, tDepth;
@@ -287,14 +312,111 @@ const post = {
     toneMapped: false,
   }),
 };
-post.scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), post.material));
+
+// --- Kontaktschatten ----------------------------------------------------------
+// Eine Kamera unter dem Tisch schaut nach oben und misst, wie nah der Würfel
+// dem Filz ist. Weichgezeichnet ergibt das den dunklen Schatten an der
+// Auflagefläche, der den Würfel "erdet" – auch gekippt und beim Drehen.
+
+const CONTACT = { size: 6.6, height: 1.5, res: 256 };
+const contact = LITE ? null : (() => {
+  const rt = () => new THREE.WebGLRenderTarget(CONTACT.res, CONTACT.res);
+  const cam = new THREE.OrthographicCamera(
+    -CONTACT.size / 2, CONTACT.size / 2, CONTACT.size / 2, -CONTACT.size / 2, 0, CONTACT.height,
+  );
+  cam.rotation.x = Math.PI / 2;
+  cam.layers.set(1);
+  const depthMat = new THREE.MeshDepthMaterial();
+  depthMat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      'gl_FragColor = vec4( vec3( 1.0 - fragCoordZ ), opacity );',
+      'gl_FragColor = vec4( vec3( 0.0 ), pow( 1.0 - fragCoordZ, 2.5 ) );',
+    );
+  };
+  const a = rt(), b = rt();
+  const blur = new THREE.ShaderMaterial({
+    uniforms: { tex: { value: null }, dir: { value: new THREE.Vector2() } },
+    vertexShader: QUAD_VERTEX,
+    fragmentShader: `
+      uniform sampler2D tex;
+      uniform vec2 dir;
+      varying vec2 vUv;
+      void main() {
+        vec4 sum = texture2D(tex, vUv) * 0.227;
+        sum += (texture2D(tex, vUv + dir * 1.38) + texture2D(tex, vUv - dir * 1.38)) * 0.316;
+        sum += (texture2D(tex, vUv + dir * 3.23) + texture2D(tex, vUv - dir * 3.23)) * 0.0703;
+        gl_FragColor = sum;
+      }`,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const plane = new THREE.Mesh(
+    new THREE.PlaneGeometry(CONTACT.size, CONTACT.size),
+    new THREE.MeshBasicMaterial({
+      map: a.texture, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide,
+    }),
+  );
+  plane.rotation.x = Math.PI / 2;
+  plane.position.y = 0.006;
+  plane.renderOrder = 1;
+  scene.add(plane);
+  return { cam, depthMat, a, b, blur };
+})();
+
+function renderContact() {
+  const background = scene.background;
+  scene.background = null;
+  scene.overrideMaterial = contact.depthMat;
+  renderer.shadowMap.autoUpdate = false;
+  renderer.setClearColor(0x000000, 0);
+  renderer.setRenderTarget(contact.a);
+  renderer.render(scene, contact.cam);
+  scene.overrideMaterial = null;
+  scene.background = background;
+  const step = 1.6 / CONTACT.res;
+  for (let pass = 0; pass < 2; pass++) {
+    contact.blur.uniforms.tex.value = contact.a.texture;
+    contact.blur.uniforms.dir.value.set(step, 0);
+    drawQuad(contact.blur, contact.b);
+    contact.blur.uniforms.tex.value = contact.b.texture;
+    contact.blur.uniforms.dir.value.set(0, step);
+    drawQuad(contact.blur, contact.a);
+  }
+  renderer.setClearColor(0x000000, 1);
+  renderer.shadowMap.autoUpdate = true;
+}
+
+// Einfache Darstellung: fester, weicher Schattenfleck statt berechneter Schatten
+if (LITE) {
+  const blob = new THREE.Mesh(
+    new THREE.PlaneGeometry(6.4, 6.4),
+    new THREE.MeshBasicMaterial({
+      map: canvasTexture(128, 128, (g, w, h) => {
+        const grad = g.createRadialGradient(w / 2, h / 2, w * 0.12, w / 2, h / 2, w / 2);
+        grad.addColorStop(0, 'rgba(0,0,0,0.75)');
+        grad.addColorStop(0.55, 'rgba(0,0,0,0.4)');
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = grad;
+        g.fillRect(0, 0, w, h);
+      }, 1, 1),
+      transparent: true, depthWrite: false,
+    }),
+  );
+  blob.rotation.x = -Math.PI / 2;
+  blob.position.set(-0.5, 0.006, -0.4);
+  scene.add(blob);
+}
 
 function render() {
   settle();
+  if (LITE) {
+    renderer.render(scene, camera);
+    return;
+  }
+  renderContact();
   renderer.setRenderTarget(target);
   renderer.render(scene, camera);
-  renderer.setRenderTarget(null);
-  renderer.render(post.scene, post.camera);
+  drawQuad(post.material, null);
 }
 
 const cubeGroup = new THREE.Group();
@@ -322,15 +444,83 @@ function roundedSquare(size, radius) {
   });
 }
 
-const cubies = [];        // { group, grid:[x,y,z] }
+const rnd = (range) => (Math.random() - 0.5) * 2 * range;
+
+// Gebrauchsspuren für die Farbkacheln: abgedunkelte Ränder, feine Kratzer und
+// Fingerabdrücke, die den Glanz ungleichmäßig machen. Einige Varianten, die je
+// Kachel zufällig gedreht werden.
+const WEAR_VARIANTS = LITE ? [] : Array.from({ length: 5 }, () => {
+  const scratches = Array.from({ length: 26 }, () => ({
+    x: Math.random(), y: Math.random(), a: Math.random() * Math.PI, len: 0.08 + Math.random() * 0.45,
+    bend: rnd(0.08), alpha: 0.25 + Math.random() * 0.75,
+  }));
+  const stroke = (g, w, sc, style, width) => {
+    const dx = Math.cos(sc.a) * sc.len * w, dy = Math.sin(sc.a) * sc.len * w;
+    g.strokeStyle = style;
+    g.lineWidth = width;
+    g.beginPath();
+    g.moveTo(sc.x * w, sc.y * w);
+    g.quadraticCurveTo(sc.x * w + dx / 2 - dy * sc.bend, sc.y * w + dy / 2 + dx * sc.bend, sc.x * w + dx, sc.y * w + dy);
+    g.stroke();
+  };
+  const color = canvasTexture(256, 256, (g, w) => {
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, w, w);
+    // Rand: Schmutz und Abschattung in den Fugen
+    for (const [x0, y0, x1, y1] of [[0, 0, 0.16, 0], [1, 0, 0.84, 0], [0, 0, 0, 0.16], [0, 1, 0, 0.84]]) {
+      const grad = g.createLinearGradient(x0 * w, y0 * w, x1 * w, y1 * w);
+      grad.addColorStop(0, 'rgba(0,0,0,0.3)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, w, w);
+    }
+    for (const sc of scratches) stroke(g, w, sc, `rgba(0,0,0,${0.10 * sc.alpha})`, 0.8);
+  }, 1, 1);
+  const rough = canvasTexture(256, 256, (g, w) => {
+    g.fillStyle = 'rgb(150,150,150)';
+    g.fillRect(0, 0, w, w);
+    // Fingerabdrücke: matte, weiche Flecken
+    for (let i = 0; i < 7; i++) {
+      const x = Math.random() * w, y = Math.random() * w, r = w * (0.1 + Math.random() * 0.22);
+      const grad = g.createRadialGradient(x, y, 0, x, y, r);
+      const v = Math.random() < 0.7 ? 255 : 60;
+      grad.addColorStop(0, `rgba(${v},${v},${v},${0.25 + Math.random() * 0.3})`);
+      grad.addColorStop(1, `rgba(${v},${v},${v},0)`);
+      g.fillStyle = grad;
+      g.fillRect(0, 0, w, w);
+    }
+    for (const sc of scratches) stroke(g, w, sc, `rgba(255,255,255,${0.7 * sc.alpha})`, 1.1);
+  }, 1, 1, false);
+  return { color, rough };
+});
+
+function wearMaps() {
+  if (!WEAR_VARIANTS.length) return {};
+  const variant = WEAR_VARIANTS[Math.floor(Math.random() * WEAR_VARIANTS.length)];
+  const turn = Math.floor(Math.random() * 4) * (Math.PI / 2) + rnd(0.06);
+  const place = (tex) => {
+    // Kachel-UVs laufen um die Kachelmitte von -0.41 bis 0.41
+    const t = tex.clone();
+    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    t.repeat.set(1 / 0.82, 1 / 0.82);
+    t.offset.set(0.5, 0.5);
+    t.rotation = turn;
+    t.needsUpdate = true;
+    return t;
+  };
+  const rough = place(variant.rough);
+  return { map: place(variant.color), roughnessMap: rough, clearcoatRoughnessMap: rough };
+}
+
+const cubies = [];        // { group, inner, grid:[x,y,z] }
 const bodies = [];        // Meshes fürs Raycasting
 const stickerMats = [];   // Material je Sticker-Index
 {
   const bodyGeo = new RoundedBoxGeometry(0.975, 0.975, 0.975, 5, 0.075);
-  const bodyMat = new THREE.MeshPhysicalMaterial({
-    color: 0x08080a, roughness: 0.45, specularIntensity: 0.5, clearcoat: 0.3, clearcoatRoughness: 0.3,
-    envMapIntensity: 1.6,
-  });
+  const bodyMat = material(
+    { color: 0x08080a, roughness: 0.45 },
+    { specularIntensity: 0.5, clearcoat: 0.3, clearcoatRoughness: 0.3, envMapIntensity: 1.6 },
+  );
   const stickerGeo = roundedSquare(0.79, 0.09);
   const byGrid = new Map();
   for (let x = -1; x <= 1; x++)
@@ -341,24 +531,34 @@ const stickerMats = [];   // Material je Sticker-Index
         group.position.set(x, y, z);
         const body = new THREE.Mesh(bodyGeo, bodyMat);
         body.userData.grid = [x, y, z];
-        body.castShadow = true;
-        group.add(body);
+        body.castShadow = body.receiveShadow = true;
+        body.layers.enable(1); // für die Kontaktschatten-Kamera
+        // echte Würfel sitzen nie perfekt: minimal versetzen und verdrehen
+        const inner = new THREE.Group();
+        if (!LITE) {
+          inner.position.set(rnd(0.004), rnd(0.004), rnd(0.004));
+          inner.rotation.set(rnd(0.009), rnd(0.009), rnd(0.009));
+        }
+        inner.add(body);
+        group.add(inner);
         bodies.push(body);
         cubeGroup.add(group);
-        const cubie = { group, grid: [x, y, z] };
+        const cubie = { group, inner, grid: [x, y, z] };
         cubies.push(cubie);
         byGrid.set(`${x},${y},${z}`, cubie);
       }
   const zAxis = new THREE.Vector3(0, 0, 1);
   STICKERS.forEach((s, i) => {
-    const mat = new THREE.MeshPhysicalMaterial({
-      roughness: 0.5, specularIntensity: 0.4, clearcoat: 0.3, clearcoatRoughness: 0.32, envMapIntensity: 1.6,
+    const mat = material({ roughness: LITE ? 0.45 : 0.85 }, {
+      specularIntensity: 0.4, clearcoat: 0.3, clearcoatRoughness: 0.55, envMapIntensity: 1.6,
+      ...wearMaps(),
     });
     const mesh = new THREE.Mesh(stickerGeo, mat);
     const n = new THREE.Vector3(...s.n);
     mesh.position.copy(n).multiplyScalar(0.4875);
     mesh.quaternion.setFromUnitVectors(zAxis, n);
-    byGrid.get(s.pos.join(',')).group.add(mesh);
+    mesh.receiveShadow = true;
+    byGrid.get(s.pos.join(',')).inner.add(mesh);
     stickerMats[i] = mat;
   });
 }
@@ -438,7 +638,7 @@ function fitCamera() {
   if (!w || !h) return;
   renderer.setSize(w, h, false);
   const size = renderer.getDrawingBufferSize(new THREE.Vector2());
-  target.setSize(size.x, size.y);
+  target?.setSize(size.x, size.y);
   camera.aspect = w / h;
   const halfV = THREE.MathUtils.degToRad(camera.fov / 2);
   const half = Math.min(halfV, Math.atan(Math.tan(halfV) * camera.aspect));
@@ -447,11 +647,13 @@ function fitCamera() {
   camera.lookAt(0, LOOK_Y, 0);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
-  const u = post.material.uniforms;
-  u.texel.value.set(1 / size.x, 1 / size.y);
-  u.focus.value = dist;
-  u.strength.value = size.y * 0.03;
-  u.maxBlur.value = size.y * 0.013;
+  if (post) {
+    const u = post.material.uniforms;
+    u.texel.value.set(1 / size.x, 1 / size.y);
+    u.focus.value = dist;
+    u.strength.value = size.y * 0.03;
+    u.maxBlur.value = size.y * 0.013;
+  }
   dirty = true;
 }
 new ResizeObserver(fitCamera).observe(stage);
