@@ -21,7 +21,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100dvh;
-  background: radial-gradient(120% 90% at 50% 35%, #232a3a 0%, var(--bg) 70%);
+  background: var(--bg);
   color: var(--text);
   font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-user-select: none;
@@ -57,7 +57,8 @@ main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 #tip {
   position: absolute; left: 0; right: 0; bottom: 4px;
   margin: 0; padding: 0 12px;
-  text-align: center; color: var(--muted); font-size: 12px;
+  text-align: center; color: rgba(255, 255, 255, .8); font-size: 12px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .9);
   pointer-events: none;
   transition: opacity .6s;
 }

@@ -1,4 +1,5 @@
 import * as THREE from '../vendor/three.module.min.js';
+import { RoundedBoxGeometry } from '../vendor/RoundedBoxGeometry.js';
 import {
   STICKERS, CENTERS, solvedColors, applyMove, isSolved, moveId, moveParts,
   inverseMove, moveName, parseMove, randomScramble,
@@ -73,20 +74,233 @@ function clampPitch(p) {
 
 const canvas = $('canvas');
 const stage = $('stage');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
-scene.add(new THREE.AmbientLight(0xffffff, 2.1));
-const sun = new THREE.DirectionalLight(0xffffff, 1.6);
-sun.position.set(3, 6, 8);
-scene.add(sun);
+const camera = new THREE.PerspectiveCamera(30, 1, 1, 90);
+
+// --- Spieltisch-Szene: Filz, Holzrand, Lampe -------------------------------
+
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.VSMShadowMap;
+scene.background = new THREE.Color(0x050403);
+
+const LAMP_POS = new THREE.Vector3(4.5, 13, 6.5);
+
+// Umgebung für Spiegelungen: dunkler Raum, grüner Filz unten, die Lampe als
+// helle Scheibe und ein schwaches Fenster hinter der Kamera.
+{
+  const env = new THREE.Scene();
+  const glow = (geo, r, g, b) => new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+    color: new THREE.Color(r, g, b), side: THREE.DoubleSide,
+  }));
+  env.add(glow(new THREE.BoxGeometry(60, 60, 60), 0.05, 0.04, 0.035));
+  const ground = glow(new THREE.PlaneGeometry(60, 60), 0.03, 0.16, 0.08);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -1.5;
+  env.add(ground);
+  const bulb = glow(new THREE.CircleGeometry(2.2, 32), 8, 6.6, 4.8);
+  bulb.position.copy(LAMP_POS);
+  bulb.lookAt(0, 0, 0);
+  env.add(bulb);
+  const windowGlow = glow(new THREE.PlaneGeometry(16, 7), 0.9, 1.0, 1.2);
+  windowGlow.position.set(-6, 7, 24);
+  windowGlow.lookAt(0, 0, 0);
+  env.add(windowGlow);
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(env, 0.03, 0.1, 100).texture;
+  pmrem.dispose();
+}
+
+// Hängelampe über dem Tisch: warmer Lichtkegel, der zum Rand hin abfällt
+const lamp = new THREE.SpotLight(0xfff0d8, 620, 0, 0.62, 0.85, 2);
+lamp.position.copy(LAMP_POS);
+lamp.target.position.set(0, 0, -1);
+lamp.castShadow = true;
+lamp.shadow.mapSize.set(1024, 1024);
+lamp.shadow.radius = 4;
+lamp.shadow.blurSamples = 8;
+lamp.shadow.bias = -0.0004;
+lamp.shadow.camera.near = 4;
+lamp.shadow.camera.far = 40;
+scene.add(lamp, lamp.target);
+// schwaches Raumlicht: warm von oben, grünlich vom Filz zurückgeworfen
+scene.add(new THREE.HemisphereLight(0xfff1e0, 0x1d4a2c, 1.0));
+
+function canvasTexture(w, h, draw, repeatX, repeatY, srgb = true) {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeatX, repeatY);
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  if (srgb) tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Filz: feines Rauschen plus kurze Fasern, als Farb- und Höhenkarte
+function drawFelt(base) {
+  return (g, w, h) => {
+    const img = g.createImageData(w, h);
+    for (let i = 0; i < w * h; i++) {
+      const n = (Math.random() - 0.5) * 46;
+      img.data[i * 4] = base[0] + n;
+      img.data[i * 4 + 1] = base[1] + n;
+      img.data[i * 4 + 2] = base[2] + n;
+      img.data[i * 4 + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+    for (let i = 0; i < 2600; i++) {
+      const x = Math.random() * w, y = Math.random() * h, a = Math.random() * Math.PI * 2;
+      const len = 3 + Math.random() * 7;
+      g.strokeStyle = Math.random() < 0.5 ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.14)';
+      g.lineWidth = 0.7;
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+      g.stroke();
+    }
+  };
+}
+
+function drawWood(g, w, h) {
+  g.fillStyle = '#5a3418';
+  g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 420; i++) {
+    const y = Math.random() * h;
+    g.strokeStyle = `rgba(${Math.random() < 0.5 ? '25,12,4' : '150,96,52'},${0.05 + Math.random() * 0.18})`;
+    g.lineWidth = 0.5 + Math.random() * 2;
+    g.beginPath();
+    g.moveTo(0, y);
+    g.bezierCurveTo(w / 3, y + (Math.random() - 0.5) * 9, (2 * w) / 3, y + (Math.random() - 0.5) * 9, w, y);
+    g.stroke();
+  }
+}
+
+const TABLE = { x: 17, zBack: -14, zFront: 22, rim: 1.7, rimH: 0.55 };
+{
+  const feltW = TABLE.x * 2, feltD = TABLE.zFront - TABLE.zBack;
+  const felt = new THREE.Mesh(
+    new THREE.PlaneGeometry(feltW, feltD),
+    new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
+      map: canvasTexture(512, 512, drawFelt([17, 92, 52]), feltW / 5, feltD / 5),
+      bumpMap: canvasTexture(512, 512, drawFelt([128, 128, 128]), feltW / 5, feltD / 5, false),
+      bumpScale: 0.6,
+      roughness: 1,
+      sheen: 1, sheenRoughness: 0.7, sheenColor: new THREE.Color(0x3f9a63),
+      envMapIntensity: 0.3,
+    }),
+  );
+  felt.rotation.x = -Math.PI / 2;
+  felt.position.z = (TABLE.zFront + TABLE.zBack) / 2;
+  felt.receiveShadow = true;
+  scene.add(felt);
+
+  const woodMat = new THREE.MeshPhysicalMaterial({
+    map: canvasTexture(1024, 128, drawWood, 3, 1),
+    roughness: 0.42, clearcoat: 0.7, clearcoatRoughness: 0.2, envMapIntensity: 1,
+  });
+  const rim = (w, d, x, z) => {
+    const m = new THREE.Mesh(new RoundedBoxGeometry(w, TABLE.rimH * 2, d, 4, 0.22), woodMat);
+    m.position.set(x, 0, z);
+    m.castShadow = m.receiveShadow = true;
+    scene.add(m);
+  };
+  const zMid = (TABLE.zFront + TABLE.zBack) / 2;
+  rim(feltW + TABLE.rim * 2, TABLE.rim, 0, TABLE.zBack - TABLE.rim / 2);
+  rim(feltW + TABLE.rim * 2, TABLE.rim, 0, TABLE.zFront + TABLE.rim / 2);
+  const side = new THREE.Mesh(new RoundedBoxGeometry(feltD, TABLE.rimH * 2, TABLE.rim, 4, 0.22), woodMat);
+  for (const sx of [-1, 1]) {
+    const m = side.clone();
+    m.rotation.y = Math.PI / 2;
+    m.position.set(sx * (TABLE.x + TABLE.rim / 2), 0, zMid);
+    m.castShadow = m.receiveShadow = true;
+    scene.add(m);
+  }
+}
+
+// --- Nachbearbeitung: Tiefenunschärfe, Vignette, Tonemapping -----------------
+
+const target = new THREE.WebGLRenderTarget(4, 4, {
+  type: THREE.HalfFloatType,
+  samples: 4,
+  depthTexture: new THREE.DepthTexture(4, 4),
+});
+const post = {
+  scene: new THREE.Scene(),
+  camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1),
+  material: new THREE.ShaderMaterial({
+    uniforms: {
+      tColor: { value: target.texture },
+      tDepth: { value: target.depthTexture },
+      texel: { value: new THREE.Vector2() },
+      near: { value: 1 }, far: { value: 90 },
+      focus: { value: 12 },      // Abstand der Schärfeebene (Würfelmitte)
+      range: { value: 3.2 },     // Bereich um die Schärfeebene, der scharf bleibt
+      strength: { value: 20 },   // Unschärfe in Pixeln
+      maxBlur: { value: 12 },
+      exposure: { value: 1.45 },
+    },
+    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: `
+      #include <packing>
+      uniform sampler2D tColor, tDepth;
+      uniform vec2 texel;
+      uniform float near, far, focus, range, strength, maxBlur, exposure;
+      varying vec2 vUv;
+      const int TAPS = 28;
+      float coc(vec2 uv) {
+        float d = -perspectiveDepthToViewZ(texture2D(tDepth, uv).x, near, far);
+        return min(maxBlur, strength * max(0.0, abs(d - focus) - range) / d);
+      }
+      void main() {
+        float c = coc(vUv);
+        vec3 sum = texture2D(tColor, vUv).rgb;
+        float wsum = 1.0;
+        if (c > 0.6) {
+          for (int i = 1; i < TAPS; i++) {
+            float r = sqrt(float(i) / float(TAPS)) * c;
+            float a = float(i) * 2.39996;
+            vec2 uv = vUv + vec2(cos(a), sin(a)) * r * texel;
+            // scharfe Bildteile dürfen nicht in den unscharfen Hintergrund ausbluten
+            float w = clamp(coc(uv) / max(r, 0.6), 0.0, 1.0);
+            sum += texture2D(tColor, uv).rgb * w;
+            wsum += w;
+          }
+        }
+        vec3 col = sum / wsum;
+        vec2 q = vUv - 0.5;
+        col *= 1.0 - 0.55 * smoothstep(0.35, 0.95, length(q) * 1.25);
+        // Tonemapping über die Helligkeit, damit kräftige Farben im Licht nicht ausbleichen
+        col *= exposure;
+        float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+        col *= (1.0 + l / 6.25) / (1.0 + l);
+        gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+        #include <colorspace_fragment>
+      }`,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false,
+  }),
+};
+post.scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), post.material));
+
+function render() {
+  settle();
+  renderer.setRenderTarget(target);
+  renderer.render(scene, camera);
+  renderer.setRenderTarget(null);
+  renderer.render(post.scene, post.camera);
+}
 
 const cubeGroup = new THREE.Group();
 scene.add(cubeGroup);
 
-const COLORS = [0xf2f2f2, 0xffd21f, 0xd0282e, 0xff7b1c, 0x18a558, 0x1f62d8]; // U D R L F B
+const COLORS = [0xf4f4f0, 0xffd000, 0xc4121c, 0xff5a00, 0x009b48, 0x0046c8]; // U D R L F B
 const COLOR_NAMES = ['Weiß', 'Gelb', 'Rot', 'Orange', 'Grün', 'Blau'];
 
 function roundedSquare(size, radius) {
@@ -101,16 +315,23 @@ function roundedSquare(size, radius) {
   s.quadraticCurveTo(-h, h, -h, h - radius);
   s.lineTo(-h, -h + radius);
   s.quadraticCurveTo(-h, -h, -h + radius, -h);
-  return new THREE.ShapeGeometry(s, 4);
+  // leicht erhabene Kachel mit gerundeter Kante, damit sie Glanzlichter fängt
+  return new THREE.ExtrudeGeometry(s, {
+    depth: 0.008, curveSegments: 6,
+    bevelEnabled: true, bevelThickness: 0.01, bevelSize: 0.012, bevelSegments: 3,
+  });
 }
 
 const cubies = [];        // { group, grid:[x,y,z] }
 const bodies = [];        // Meshes fürs Raycasting
 const stickerMats = [];   // Material je Sticker-Index
 {
-  const bodyGeo = new THREE.BoxGeometry(0.995, 0.995, 0.995);
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x0b0c0f, roughness: 0.6 });
-  const stickerGeo = roundedSquare(0.86, 0.13);
+  const bodyGeo = new RoundedBoxGeometry(0.975, 0.975, 0.975, 5, 0.075);
+  const bodyMat = new THREE.MeshPhysicalMaterial({
+    color: 0x08080a, roughness: 0.45, specularIntensity: 0.5, clearcoat: 0.3, clearcoatRoughness: 0.3,
+    envMapIntensity: 1.6,
+  });
+  const stickerGeo = roundedSquare(0.79, 0.09);
   const byGrid = new Map();
   for (let x = -1; x <= 1; x++)
     for (let y = -1; y <= 1; y++)
@@ -120,6 +341,7 @@ const stickerMats = [];   // Material je Sticker-Index
         group.position.set(x, y, z);
         const body = new THREE.Mesh(bodyGeo, bodyMat);
         body.userData.grid = [x, y, z];
+        body.castShadow = true;
         group.add(body);
         bodies.push(body);
         cubeGroup.add(group);
@@ -129,10 +351,12 @@ const stickerMats = [];   // Material je Sticker-Index
       }
   const zAxis = new THREE.Vector3(0, 0, 1);
   STICKERS.forEach((s, i) => {
-    const mat = new THREE.MeshStandardMaterial({ roughness: 0.38 });
+    const mat = new THREE.MeshPhysicalMaterial({
+      roughness: 0.5, specularIntensity: 0.4, clearcoat: 0.3, clearcoatRoughness: 0.32, envMapIntensity: 1.6,
+    });
     const mesh = new THREE.Mesh(stickerGeo, mat);
     const n = new THREE.Vector3(...s.n);
-    mesh.position.copy(n).multiplyScalar(0.502);
+    mesh.position.copy(n).multiplyScalar(0.4875);
     mesh.quaternion.setFromUnitVectors(zAxis, n);
     byGrid.get(s.pos.join(',')).group.add(mesh);
     stickerMats[i] = mat;
@@ -151,7 +375,7 @@ arrow.add(arrowSpin);
 arrow.visible = false;
 cubeGroup.add(arrow);
 {
-  const mat = new THREE.MeshBasicMaterial({ color: 0x4cc9f0 });
+  const mat = new THREE.MeshBasicMaterial({ color: 0x4cc9f0, toneMapped: false });
   const R = 2.42, ARC = Math.PI * 0.72;
   const arcGeo = new THREE.TorusGeometry(R, 0.05, 8, 48, ARC);
   const coneGeo = new THREE.ConeGeometry(0.16, 0.42, 16);
@@ -185,20 +409,49 @@ function showArrow(move) {
 
 let dirty = true;
 
+const CAM_ELEV = 0.5;  // Blick von schräg oben auf den Tisch
+const LOOK_Y = 1.7;
+const HALF = 0.4875;   // halbe Kantenlänge eines Steins
+
+// Der Würfel wird in der Hand gedreht; Kamera, Tisch und Licht bleiben stehen.
 function applyView() {
-  cubeGroup.rotation.set(state.pitch, state.yaw, 0, 'XYZ');
+  cubeGroup.rotation.set(state.pitch - CAM_ELEV, state.yaw, 0, 'XYZ');
   dirty = true;
+}
+
+// Setzt den Würfel so auf den Filz, dass sein tiefster Punkt gerade aufliegt –
+// auch gekippt und während eine Ebene gedreht wird.
+const up = new THREE.Vector3(), tmpV = new THREE.Vector3(), tmpQ = new THREE.Quaternion();
+function settle() {
+  up.set(0, 1, 0).applyQuaternion(tmpQ.copy(cubeGroup.quaternion).invert());
+  let low = Infinity;
+  for (const c of cubies) {
+    tmpV.copy(up).applyQuaternion(tmpQ.copy(c.group.quaternion).invert());
+    const reach = HALF * (Math.abs(tmpV.x) + Math.abs(tmpV.y) + Math.abs(tmpV.z));
+    low = Math.min(low, up.dot(c.group.position) - reach);
+  }
+  cubeGroup.position.y = 0.012 - low;
 }
 
 function fitCamera() {
   const w = stage.clientWidth, h = stage.clientHeight;
   if (!w || !h) return;
   renderer.setSize(w, h, false);
+  const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+  target.setSize(size.x, size.y);
   camera.aspect = w / h;
   const halfV = THREE.MathUtils.degToRad(camera.fov / 2);
   const half = Math.min(halfV, Math.atan(Math.tan(halfV) * camera.aspect));
-  camera.position.set(0, 0, (2.75 / Math.sin(half)) * zoom);
+  const dist = (3.0 / Math.sin(half)) * zoom;
+  camera.position.set(0, LOOK_Y + dist * Math.sin(CAM_ELEV), dist * Math.cos(CAM_ELEV));
+  camera.lookAt(0, LOOK_Y, 0);
   camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+  const u = post.material.uniforms;
+  u.texel.value.set(1 / size.x, 1 / size.y);
+  u.focus.value = dist;
+  u.strength.value = size.y * 0.03;
+  u.maxBlur.value = size.y * 0.013;
   dirty = true;
 }
 new ResizeObserver(fitCamera).observe(stage);
@@ -287,7 +540,7 @@ function frame(now) {
   }
   if (dirty) {
     dirty = false;
-    renderer.render(scene, camera);
+    render();
   }
 }
 
@@ -303,12 +556,14 @@ function localXY(ev) {
 }
 
 function pick(x, y, w, h) {
+  settle();
   cubeGroup.updateMatrixWorld(true);
   raycaster.setFromCamera(new THREE.Vector2((x / w) * 2 - 1, 1 - (y / h) * 2), camera);
   const hit = raycaster.intersectObjects(bodies, false)[0];
   if (!hit) return null;
   const n = hit.face.normal;
-  const nAxis = Math.abs(n.x) > 0.5 ? 0 : Math.abs(n.y) > 0.5 ? 1 : 2;
+  const ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z);
+  const nAxis = ax >= ay && ax >= az ? 0 : ay >= az ? 1 : 2;
   return {
     grid: hit.object.userData.grid,
     nAxis,
