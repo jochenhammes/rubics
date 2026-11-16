@@ -717,6 +717,7 @@ function settle() {
   cubeGroup.position.y = 0.012 - low;
 }
 
+const focusPoint = new THREE.Vector3();
 function fitCamera() {
   const w = stage.clientWidth, h = stage.clientHeight;
   if (!w || !h) return;
@@ -745,9 +746,22 @@ function fitCamera() {
   if (post) {
     const u = post.material.uniforms;
     u.texel.value.set(1 / size.x, 1 / size.y);
-    u.focus.value = camera.position.distanceTo(POKER ? LOOK : CUBE_CENTER);
-    u.strength.value = size.y * 0.03;
-    u.maxBlur.value = size.y * 0.013;
+    if (POKER) {
+      // Scharf bleibt immer der Bereich von den eigenen Karten und Chips bis hinter
+      // die Gemeinschaftskarten – egal wie weit herangezoomt wird. Nur was davor
+      // oder dahinter liegt, wird (dezent) unscharf.
+      const heroZ = TABLE_CENTER.z + (camera.aspect < 0.9 ? 10 : 6.2) + 4;
+      const near = camera.position.distanceTo(focusPoint.set(0, 0, heroZ));
+      const far = camera.position.distanceTo(focusPoint.set(0, 0, TABLE_CENTER.z - 3));
+      u.focus.value = (near + far) / 2;
+      u.range.value = Math.abs(far - near) / 2 + 2.5;
+      u.strength.value = size.y * 0.018;
+      u.maxBlur.value = size.y * 0.007;
+    } else {
+      u.focus.value = camera.position.distanceTo(CUBE_CENTER);
+      u.strength.value = size.y * 0.03;
+      u.maxBlur.value = size.y * 0.013;
+    }
   }
   dirty = true;
   pokerGame?.relayout(); // Hoch-/Querformat kann sich geändert haben
