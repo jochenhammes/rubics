@@ -170,13 +170,21 @@ body.poker nav > button { display: none; }
 body.poker nav { display: block; padding: 6px 10px calc(10px + env(safe-area-inset-bottom)); }
 #pkMenu { padding: 6px 10px; font-size: 12px; }
 
-#pkBar { max-width: 640px; margin: 0 auto; }
+/* Die Leiste behält immer dieselbe Höhe, damit das Bild nicht springt:
+   Bedienelemente werden nur unsichtbar, der Wartetext liegt darüber. */
+#pkBar { position: relative; max-width: 640px; margin: 0 auto; }
 #pkBar:not(.my-turn) > :not(#pkWait),
+#pkRaise.off { visibility: hidden; }
 #pkBar.my-turn > #pkWait { display: none; }
-#pkWait { min-height: 46px; padding: 12px 0; text-align: center; color: var(--muted); }
+#pkWait {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  text-align: center; color: var(--muted);
+}
 .pk-actions { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; }
+/* feste Höhe: ein zweizeiliger Text ("Raise auf 1.500") darf die Leiste nicht vergrößern */
+.pk-actions button { height: 52px; padding: 0 6px; font-size: 14px; line-height: 1.15; }
 #pkRaise { display: grid; grid-template-columns: auto 1fr 84px; gap: 8px; align-items: center; margin-bottom: 8px; }
-#pkRaise[hidden] { display: none; }
 .pk-presets { display: flex; gap: 4px; }
 .pk-presets button { padding: 6px 8px; font-size: 12px; }
 #pkSlider { width: 100%; accent-color: var(--accent); touch-action: pan-x; }

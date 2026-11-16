@@ -229,7 +229,8 @@ export function startPokerGame({ table, stage, nav, header, aspect, requestRende
     }
     $('pkFold').disabled = !legal.canFold;
     $('pkCall').textContent = legal.canCheck ? 'Check' : `Call ${money(legal.callAmount)}`;
-    $('pkRaise').hidden = $('pkBet').hidden = !legal.canRaise;
+    $('pkRaise').classList.toggle('off', !legal.canRaise); // Platz bleibt reserviert
+    $('pkBet').hidden = !legal.canRaise;
     if (legal.canRaise) {
       const slider = $('pkSlider');
       slider.min = legal.minRaiseTo;
