@@ -58,6 +58,7 @@ const DIALOGS = `
           <option value="turbo">Turbo</option><option value="normal">Normal</option><option value="slow">Langsam</option>
         </select>
       </label>
+      <p id="pkSmall" hidden>Auf kleinen Bildschirmen sind höchstens 6 Spieler möglich.</p>
       <div class="pk-dialog-actions">
         <button value="resume" id="pkResume">Fortsetzen</button>
         <button value="start" class="primary">Turnier starten</button>
@@ -100,7 +101,12 @@ export function startPokerGame({ table, stage, nav, header, aspect, requestRende
   function openSetup() {
     const dialog = $('pkSetup'), form = dialog.querySelector('form');
     const last = { ...DEFAULT_SETUP, ...(storage.loadSetup() ?? {}) };
-    form.opponents.value = last.totalPlayers - 1;
+    // kleine Bildschirme (Phone): höchstens 6 Spieler, sonst wird es am Tisch zu eng
+    const small = window.matchMedia('(max-width: 700px), (max-height: 520px)').matches;
+    const maxOpponents = small ? 5 : 7;
+    for (const option of form.opponents.options) option.hidden = option.disabled = Number(option.value) > maxOpponents;
+    $('pkSmall').hidden = !small;
+    form.opponents.value = Math.min(last.totalPlayers - 1, maxOpponents);
     form.difficulty.value = last.difficulty;
     form.stack.value = last.startingStack;
     form.speed.value = last.blindSpeed;
@@ -122,7 +128,7 @@ export function startPokerGame({ table, stage, nav, header, aspect, requestRende
     }
     const setup = {
       playerName: 'Du',
-      totalPlayers: Number(form.opponents.value) + 1,
+      totalPlayers: Math.min(Number(form.opponents.value), form.opponents.options[6].disabled ? 5 : 7) + 1,
       difficulty: form.difficulty.value,
       startingStack: Number(form.stack.value),
       blindSpeed: form.speed.value,

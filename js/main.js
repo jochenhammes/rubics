@@ -951,7 +951,7 @@ canvas.addEventListener('pointerdown', (ev) => {
     const hit = !POKER && !busy() && pick(p.x, p.y, p.w, p.h);
     drag = hit
       ? { mode: 'pending', id: ev.pointerId, x0: p.x, y0: p.y, ...hit }
-      : { mode: 'orbit', id: ev.pointerId, x: p.x, y: p.y };
+      : { mode: 'orbit', id: ev.pointerId, x: p.x, y: p.y, x0: p.x, y0: p.y };
     canvas.classList.add('grabbing');
   }
 });
@@ -998,7 +998,14 @@ function pointerEnd(ev) {
   drag = null;
   canvas.classList.remove('grabbing');
   if (d.mode === 'turn') endTurn(d, ev.type === 'pointercancel');
-  else if (d.mode === 'orbit') save();
+  else if (d.mode === 'orbit') {
+    // Pokertisch: Tippen (ohne Ziehen) auf einen Chipstapel blendet die Beschriftung ein/aus
+    if (poker && ev.type === 'pointerup') {
+      const p = localXY(ev);
+      if (Math.hypot(p.x - d.x0, p.y - d.y0) < 7) poker.tapChips(p.x, p.y, camera, p.w, p.h);
+    }
+    save();
+  }
 }
 canvas.addEventListener('pointerup', pointerEnd);
 canvas.addEventListener('pointercancel', pointerEnd);
@@ -1168,7 +1175,7 @@ if (POKER) {
   document.body.classList.add('poker');
   document.title = "Texas Hold'em";
   document.querySelector('h1').textContent = "Texas Hold'em";
-  $('tip').textContent = 'Ziehen: Kamera schwenken · Zoomen: Mausrad oder zwei Finger';
+  $('tip').textContent = 'Ziehen: Kamera schwenken · Chipstapel antippen: Beschriftung ein/aus';
   setTimeout(() => $('tip').classList.add('hide'), 8000);
   pokerGame = startPokerGame({
     table: poker,

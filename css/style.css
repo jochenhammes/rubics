@@ -204,6 +204,8 @@ body.poker nav { display: block; padding: 6px 10px calc(10px + env(safe-area-ins
 #pkMsg.show { opacity: 1; }
 
 #pkLabels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+#pkLabels.pk-hidden { display: none; }
+#pkSmall { margin: 0; color: var(--muted); font-size: 12px; }
 .pk-seat, .pk-bet, .pk-pot { position: absolute; left: 0; top: 0; white-space: nowrap; will-change: transform; }
 .pk-seat {
   display: flex; flex-direction: column; align-items: center;

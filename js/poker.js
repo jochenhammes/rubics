@@ -683,16 +683,48 @@ export function createPoker({ scene, material, canvasTexture, lite, center, labe
   const ONE = new THREE.Vector3(1, 1, 1), UP = new THREE.Vector3(0, 1, 0);
   let chipSig = '';
 
+  // Chips im Flug: wandern von ihrem Herkunftsstapel an den neuen Platz
+  let prevPiles = new Map(); // Stapel-ID -> { x, z, amount, counts }
+  let flights = [];          // { d, index, from, to, quat, start, dur }
+  let currentPiles = [];
+
+  // Woher kommen Chips, die in einem Stapel neu dazukommen?
+  //   Einsatz  <- eigener Stack        Pot <- eingesammelte Einsätze
+  //   Stack    <- Pot (Gewinn) oder eigener Einsatz (zurückgegeben)
+  function sourcesFor(pile, byId) {
+    const prev = prevPiles.get(pile.id);
+    if (!prevPiles.size || (prev && pile.amount <= prev.amount)) return null;
+    const shrank = (id) => prevPiles.has(id) && (byId.get(id)?.amount ?? 0) < prevPiles.get(id).amount;
+    if (pile.id === 99) {
+      const bets = [...prevPiles.keys()].filter((id) => id !== 99 && id % 2 === 0 && shrank(id));
+      return bets.length ? bets.map((id) => prevPiles.get(id)) : null;
+    }
+    if (pile.id % 2 === 0) {
+      const stack = prevPiles.get(pile.id - 1) ?? byId.get(pile.id - 1);
+      return stack ? [stack] : null;
+    }
+    if (shrank(99)) return [prevPiles.get(99)];
+    if (shrank(pile.id + 1)) return [prevPiles.get(pile.id + 1)];
+    return null;
+  }
+
   // piles: [{ id, amount, x, z, ax:[x,z], ay:[x,z] }] – ax/ay spannen das Raster der Stapel auf
-  function layoutChips(piles) {
+  function layoutChips(piles, now) {
     const used = DENOMS.map(() => 0);
+    const byId = new Map(piles.map((pile) => [pile.id, pile]));
+    const next = new Map();
+    flights = [];
     for (const pile of piles) {
       const counts = chipsFor(pile.amount);
+      const before = prevPiles.get(pile.id)?.counts;
+      const sources = sourcesFor(pile, byId);
+      const placed = DENOMS.map(() => 0);
       const columns = [];
       for (let d = DENOMS.length - 1; d >= 0; d--) {
         for (let left = counts[d]; left > 0; left -= 14) columns.push([d, Math.min(14, left)]);
       }
       const perRow = pile.perRow ?? 4, pitch = CHIP_R * 2 + 0.1;
+      let launched = 0;
       columns.forEach(([d, n], c) => {
         const row = Math.floor(c / perRow), inRow = Math.min(perRow, columns.length - row * perRow);
         const u = ((c % perRow) - (inRow - 1) / 2) * pitch + (hash(pile.id, c, 1) - 0.5) * 0.08;
@@ -706,14 +738,47 @@ export function createPoker({ scene, material, canvasTexture, lite, center, labe
             bz + leanZ * i + (hash(pile.id, c, 40 + i) - 0.5) * 0.05,
           );
           chipQ.setFromAxisAngle(UP, hash(pile.id, c, 70 + i) * Math.PI * 2);
-          chipMeshes[d].setMatrixAt(used[d]++, chipM.compose(chipP, chipQ, ONE));
+          const index = used[d]++;
+          // nur Chips, die es in diesem Stapel vorher nicht gab, fliegen ein
+          if (sources && placed[d]++ >= (before?.[d] ?? 0)) {
+            const src = sources[launched % sources.length];
+            const from = new THREE.Vector3(src.x + rnd(0.25), 0.3, src.z + rnd(0.25));
+            flights.push({
+              d, index, from, to: chipP.clone(), quat: chipQ.clone(),
+              start: now + launched * 16, dur: 420 + Math.random() * 120,
+            });
+            launched++;
+            chipP.copy(from);
+          }
+          chipMeshes[d].setMatrixAt(index, chipM.compose(chipP, chipQ, ONE));
         }
       });
+      next.set(pile.id, { x: pile.x, z: pile.z, amount: pile.amount, counts });
     }
+    prevPiles = next;
+    currentPiles = piles;
+    if (flights.length) animating = true;
     chipMeshes.forEach((mesh, d) => {
       mesh.count = used[d];
       mesh.instanceMatrix.needsUpdate = true;
     });
+  }
+
+  // Beschriftungen ein-/ausblenden, wenn ein Chipstapel angetippt wird
+  let labelsVisible = true;
+  try { labelsVisible = localStorage.getItem('rubics.poker.labels') !== '0'; } catch { /* egal */ }
+  labels.classList.toggle('pk-hidden', !labelsVisible);
+  const tapPoint = new THREE.Vector3();
+  function tapChips(x, y, camera, w, h) {
+    const hit = currentPiles.some((pile) => {
+      tapPoint.set(pile.x, 0.5, pile.z).project(camera);
+      return Math.hypot((tapPoint.x + 1) / 2 * w - x, (1 - tapPoint.y) / 2 * h - y) < 38;
+    });
+    if (!hit) return false;
+    labelsVisible = !labelsVisible;
+    labels.classList.toggle('pk-hidden', !labelsVisible);
+    try { localStorage.setItem('rubics.poker.labels', labelsVisible ? '1' : '0'); } catch { /* egal */ }
+    return true;
   }
 
   // --- Beschriftungen (HTML über der Szene) ---
@@ -796,6 +861,7 @@ export function createPoker({ scene, material, canvasTexture, lite, center, labe
       tableSig = sig;
       seats = seatGeometry(view);
       chipSig = '';
+      prevPiles = new Map(); // neuer Tisch oder gedrehter Bildschirm: Chips ohne Flug neu setzen
     }
     const d = deckPos();
     deck.position.set(d.x, 0, d.z);
@@ -881,7 +947,7 @@ export function createPoker({ scene, material, canvasTexture, lite, center, labe
     const nextChipSig = piles.map((p) => `${p.id}:${p.amount}`).join(',');
     if (nextChipSig !== chipSig) {
       chipSig = nextChipSig;
-      layoutChips(piles);
+      layoutChips(piles, now);
     }
 
     // Beschriftungen
@@ -953,6 +1019,20 @@ export function createPoker({ scene, material, canvasTexture, lite, center, labe
         card.queue.shift();
       }
     }
+    if (flights.length) {
+      active = true;
+      const touched = new Set();
+      flights = flights.filter((f) => {
+        if (now < f.start) return true;
+        const raw = Math.min(1, (now - f.start) / f.dur), k = easeOut(raw);
+        chipP.lerpVectors(f.from, f.to, k);
+        chipP.y += 0.9 * Math.sin(Math.PI * raw);
+        chipMeshes[f.d].setMatrixAt(f.index, chipM.compose(chipP, f.quat, ONE));
+        touched.add(f.d);
+        return raw < 1;
+      });
+      for (const d of touched) chipMeshes[d].instanceMatrix.needsUpdate = true;
+    }
     if (button.target) {
       const p = button.mesh.position;
       const dx = button.target[0] - p.x, dz = button.target[1] - p.z;
@@ -966,7 +1046,7 @@ export function createPoker({ scene, material, canvasTexture, lite, center, labe
     return true;
   }
 
-  return { setSnapshot, update, layoutLabels };
+  return { setSnapshot, update, layoutLabels, tapChips };
 }
 
 function escapeHtml(text) {

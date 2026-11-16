@@ -17,7 +17,9 @@ https://jochenhammes.github.io/rubics/?variante=poker
 ```
 
 - **Sit & Go** gegen 1–7 Computergegner in drei Spielstärken, mit wählbarem Startstack und Blind-Tempo. Regeln, Blindstruktur und Gegner stammen aus der Poker-Engine des Repositories [jochenhammes/texasholdem](https://github.com/jochenhammes/texasholdem).
-- **Am Tisch:** Karten werden animiert gegeben, Flop, Turn und River aufgedeckt, gefoldete Hände eingezogen. Stacks, Einsätze und Pot liegen als Chips auf dem Filz, der Dealer-Button wandert mit. Namen, Chipstände und Aktionen stehen als Beschriftung an jedem Platz.
+- **Am Tisch:** Karten werden animiert gegeben, Flop, Turn und River aufgedeckt, gefoldete Hände eingezogen. Stacks, Einsätze und Pot liegen als Chips auf dem Filz und wandern animiert zwischen Stack, Einsatz und Pot; der Dealer-Button wandert mit. Namen, Chipstände und Aktionen stehen als Beschriftung an jedem Platz.
+- **Beschriftung:** Ein Tipp auf einen Chipstapel blendet alle Beschriftungen aus bzw. wieder ein.
+- **Kleine Bildschirme:** Auf Phones sind höchstens 6 Spieler wählbar, damit der Tisch übersichtlich bleibt.
 - **Bedienung:** Fold, Check/Call und Bet/Raise unten; der Einsatz lässt sich per Schieberegler, Zahlenfeld oder Schnellwahl (Min, ½ Pot, Pot, All-in) einstellen. Ziehen schwenkt die Kamera, Mausrad bzw. zwei Finger zoomen.
 - **Spielstand:** Das laufende Turnier wird im Browser gespeichert und kann nach dem Neuladen fortgesetzt werden. „Neues Turnier“ oben rechts startet neu.
 - Gleichwertige Schreibweise: `?poker`. Kombinierbar mit der einfachen Darstellung: `?variante=poker&grafik=einfach`.
